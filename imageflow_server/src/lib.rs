@@ -383,18 +383,6 @@ fn ir4_http_respond_uncached<F>(_shared: &SharedData, url: &str, framewise_gener
     }, framewise_generator)
 }
 
-
-fn ir4_framewise(_info: &s::ImageInfo, url: &url::Url) -> std::result::Result<s::Framewise, ServerError> {
-    let t = ::imageflow_riapi::ir4::Ir4Translate{
-        i: ::imageflow_riapi::ir4::Ir4Command::Url(url.as_str().to_owned()),
-        decode_id: Some(0),
-        encode_id: Some(1),
-        watermarks: None
-    };
-    t.translate().map_err( ServerError::LayoutSizingError).and_then(|r: ::imageflow_riapi::ir4::Ir4Result| Ok(s::Framewise::Steps(r.steps.unwrap())))
-}
-
-
 type EngineHandler<T> = fn(req: &mut Request, engine_data: &T, mount: &MountLocation) -> IronResult<Response>;
 type EngineSetup<T> = fn(mount: &MountLocation) -> Result<(T, EngineHandler<T>), String>;
 
@@ -405,6 +393,7 @@ fn ir4_local_respond<F>(_: &SharedData, source: &Path, framewise_generator: F) -
     respond_using(&source, || fetch_bytes_from_disk(source), framewise_generator)
 }
 
+mod recipe;
 fn ir4_local_handler(req: &mut Request, local_path: &PathBuf, _: &MountLocation) -> IronResult<Response> {
     let requested_path = requested_path::RequestedPath::new(local_path, req);
 
@@ -412,9 +401,10 @@ fn ir4_local_handler(req: &mut Request, local_path: &PathBuf, _: &MountLocation)
     let shared = req.get::<persistent::Read<SharedData>>().unwrap();
 
     if requested_path.path.exists() {
-        return ir4_local_respond(&shared, requested_path.path.as_path(), move |info: s::ImageInfo| {
-            ir4_framewise(&info, &url)
-        });
+        return ir4_local_respond(&shared, requested_path.path.as_path(), recipe::get_framewise(req));
+        // move |info: s::ImageInfo| {
+        //     //ir4_framewise(&info, &url)
+        // });
     }
 
     let _ = writeln!(&mut std::io::stderr(), "404 {:?} using local path {:?} and base {:?}", &url.path(), requested_path.path.as_path(), local_path);
@@ -516,9 +506,10 @@ fn ir4_http_handler(req: &mut Request, base_url: &String, _: &MountLocation) -> 
     //TODO: Ensure the combined url is canonical (or, at least, lacks ..)
     let remote_url = format!("{}{}", base_url, &url.path()[1..]);
 
-    ir4_http_respond(&shared, &remote_url, move |info: s::ImageInfo| {
-        ir4_framewise(&info, &url)
-    })
+    ir4_http_respond(&shared, &remote_url, recipe::get_framewise(req))
+    // move |info: s::ImageInfo| {
+    //     //ir4_framewise(&info, &url)
+    // })
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(ptr_arg))]
@@ -528,9 +519,10 @@ fn ir4_proxy_uncached_handler(req: &mut Request, base_url: &String, _: &MountLoc
     //TODO: Ensure the combined url is canonical (or, at least, lacks ..)
     let remote_url = format!("{}{}", base_url, &url.path()[1..]);
 
-    ir4_http_respond_uncached(&shared, &remote_url, move |info: s::ImageInfo| {
-        ir4_framewise(&info, &url)
-    })
+    ir4_http_respond_uncached(&shared, &remote_url,recipe::get_framewise(req))
+    // move |info: s::ImageInfo| {
+    //     //ir4_framewise(&info, &url)
+    // })
 }
 
 fn ir4_http_setup(mount: &MountLocation) -> Result<(String, EngineHandler<String>), String> {
